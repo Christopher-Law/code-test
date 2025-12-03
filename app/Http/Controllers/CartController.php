@@ -15,7 +15,6 @@ class CartController extends Controller
      */
     public function index(): Response
     {
-        // For demo purposes, use first user or create a guest user
         $user = Auth::user() ?? \App\Models\User::first();
 
         if (! $user) {
@@ -39,7 +38,7 @@ class CartController extends Controller
 
         $subtotal = $selectedItems->sum(fn ($item) => $item->subtotal);
         $shippingTotal = $selectedItems->sum(fn ($item) => $item->shipping_total);
-        $tax = $subtotal * 0.0835; // 8.35% tax rate (example)
+        $tax = $subtotal * 0.0835;
         $orderTotal = $subtotal + $shippingTotal + $tax;
 
         return Inertia::render('Cart/Index', [

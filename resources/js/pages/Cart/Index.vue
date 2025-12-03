@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import OptimizationModal from '@/components/OptimizationModal.vue';
 
@@ -43,7 +43,15 @@ interface Props {
 const props = defineProps<Props>();
 
 const showOptimizationModal = ref(false);
-const optimizationData = ref<any>(null);
+const optimizationData = ref<{
+    optimizations: Array<{
+        cart_item_id: number;
+        total_savings: number;
+        price_savings: number;
+    }>;
+    total_savings: number;
+    total_savings_with_shipping: number;
+} | null>(null);
 const loading = ref(false);
 
 const formatCurrency = (amount: number): string => {
@@ -75,62 +83,44 @@ const getAvailabilityLabel = (status: string): string => {
     }
 };
 
-const updateQuantity = async (item: CartItem, newQuantity: number) => {
+const updateQuantity = (item: CartItem, newQuantity: number) => {
     if (newQuantity < 1) {
         return;
     }
 
-    try {
-        await router.patch(`/cart/items/${item.id}/quantity`, {
-            quantity: newQuantity,
-        }, {
-            preserveState: true,
-            preserveScroll: true,
-        });
-    } catch (error) {
-        console.error('Failed to update quantity:', error);
-    }
+    router.patch(`/cart/items/${item.id}/quantity`, {
+        quantity: newQuantity,
+    }, {
+        preserveState: true,
+        preserveScroll: true,
+    });
 };
 
-const toggleSelection = async (item: CartItem) => {
-    try {
-        await router.patch(`/cart/items/${item.id}/toggle-selection`, {}, {
-            preserveState: true,
-            preserveScroll: true,
-        });
-    } catch (error) {
-        console.error('Failed to toggle selection:', error);
-    }
+const toggleSelection = (item: CartItem) => {
+    router.patch(`/cart/items/${item.id}/toggle-selection`, {}, {
+        preserveState: true,
+        preserveScroll: true,
+    });
 };
 
-const removeItem = async (item: CartItem) => {
+const removeItem = (item: CartItem) => {
     if (!confirm('Are you sure you want to remove this item from your cart?')) {
         return;
     }
 
-    try {
-        await router.delete(`/cart/items/${item.id}`, {
-            preserveState: true,
-            preserveScroll: true,
-        });
-    } catch (error) {
-        console.error('Failed to remove item:', error);
-    }
+    router.delete(`/cart/items/${item.id}`, {
+        preserveState: true,
+        preserveScroll: true,
+    });
 };
 
 const optimizeCart = async () => {
     loading.value = true;
-    try {
-        const response = await fetch('/api/optimize/cart');
-        const data = await response.json();
-        optimizationData.value = data;
-        showOptimizationModal.value = true;
-    } catch (error) {
-        console.error('Failed to optimize cart:', error);
-        alert('Failed to optimize cart. Please try again.');
-    } finally {
-        loading.value = false;
-    }
+    const response = await fetch('/api/optimize/cart');
+    const data = await response.json();
+    optimizationData.value = data;
+    showOptimizationModal.value = true;
+    loading.value = false;
 };
 
 const onOptimizationApplied = () => {

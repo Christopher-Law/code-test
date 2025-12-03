@@ -3,21 +3,16 @@
 namespace App\Services;
 
 use App\Models\CartItem;
-use App\Models\Product;
 use App\Models\ProductAlternative;
 use App\Models\ProductVariant;
 
 class CartOptimizationService
 {
-    /**
-     * Default weights for optimization factors
-     * These can be configured per user or globally
-     */
     protected array $weights = [
-        'price' => 0.40,           // 40% weight on price
-        'shipping' => 0.20,        // 20% weight on shipping cost
-        'delivery_speed' => 0.25,  // 25% weight on delivery speed
-        'availability' => 0.15,    // 15% weight on availability
+        'price' => 0.40,
+        'shipping' => 0.20,
+        'delivery_speed' => 0.25,
+        'availability' => 0.15,
     ];
 
     /**
@@ -61,14 +56,12 @@ class CartOptimizationService
         $currentVariant = $cartItem->productVariant;
         $product = $currentVariant->product;
 
-        // Get all variants of the same product (different suppliers)
         $sameProductVariants = ProductVariant::where('product_id', $product->id)
             ->where('id', '!=', $currentVariant->id)
             ->where('is_active', true)
             ->with(['supplier', 'product'])
             ->get();
 
-        // Get alternative products (similar items)
         $alternativeProducts = ProductAlternative::where('product_id', $product->id)
             ->with(['alternativeProduct.variants.supplier'])
             ->get()
@@ -77,7 +70,6 @@ class CartOptimizationService
 
         $alternatives = collect();
 
-        // Evaluate same product variants
         foreach ($sameProductVariants as $variant) {
             $score = $this->calculateOptimizationScore($currentVariant, $variant, $cartItem->quantity, 'same_product');
             $alternatives->push([
@@ -88,7 +80,6 @@ class CartOptimizationService
             ]);
         }
 
-        // Evaluate alternative products
         foreach ($alternativeProducts as $alternativeProduct) {
             $relationship = ProductAlternative::where('product_id', $product->id)
                 ->where('alternative_product_id', $alternativeProduct->id)
@@ -116,7 +107,6 @@ class CartOptimizationService
             }
         }
 
-        // Get the best alternative
         $bestAlternative = $alternatives->sortByDesc('score')->first();
 
         if ($bestAlternative === null || $bestAlternative['score'] <= 0) {
@@ -174,21 +164,18 @@ class CartOptimizationService
     ): float {
         $score = 0.0;
 
-        // Price score (lower is better, so we invert)
         $currentPrice = $currentVariant->price * $quantity;
         $alternativePrice = $alternativeVariant->price * $quantity;
         $priceDifference = $currentPrice - $alternativePrice;
         $priceScore = $priceDifference > 0 ? ($priceDifference / $currentPrice) : 0;
         $score += $priceScore * $this->weights['price'];
 
-        // Shipping score
         $currentShipping = $currentVariant->shipping_cost * $quantity;
         $alternativeShipping = $alternativeVariant->shipping_cost * $quantity;
         $shippingDifference = $currentShipping - $alternativeShipping;
         $shippingScore = $shippingDifference > 0 ? ($shippingDifference / max($currentShipping, 1)) : 0;
         $score += $shippingScore * $this->weights['shipping'];
 
-        // Delivery speed score (faster delivery = higher score)
         $currentDeliveryDays = $currentVariant->estimated_delivery_days ?? 999;
         $alternativeDeliveryDays = $alternativeVariant->estimated_delivery_days ?? 999;
 
@@ -199,7 +186,6 @@ class CartOptimizationService
         }
         $score += $deliveryScore * $this->weights['delivery_speed'];
 
-        // Availability score
         $availabilityScores = [
             'in_stock' => 1.0,
             'backordered' => 0.5,
@@ -215,28 +201,20 @@ class CartOptimizationService
         }
         $score += $availabilityScore * $this->weights['availability'];
 
-        // Bonus for same brand
         if ($type === 'same_product' ||
             ($currentVariant->product->brand &&
              $alternativeVariant->product->brand &&
              $currentVariant->product->brand === $alternativeVariant->product->brand)) {
-            $score += 0.1; // 10% bonus
+            $score += 0.1;
         }
 
-        // Penalty for similar items (not exact match)
         if ($type === 'similar_item') {
-            $score *= 0.8; // 20% penalty
+            $score *= 0.8;
         }
 
         return max(0, $score);
     }
 
-    /**
-     * Get detailed optimization suggestions for a cart item
-     * Returns same brand and similar item alternatives separately
-     *
-     * @return array{same_brand: array, similar_items: array, all: array}
-     */
     public function getOptimizationSuggestions(CartItem $cartItem): array
     {
         $currentVariant = $cartItem->productVariant;
@@ -246,7 +224,6 @@ class CartOptimizationService
         $similarItems = [];
         $all = [];
 
-        // Get same product variants
         $sameProductVariants = ProductVariant::where('product_id', $product->id)
             ->where('id', '!=', $currentVariant->id)
             ->where('is_active', true)
@@ -261,7 +238,6 @@ class CartOptimizationService
             }
         }
 
-        // Get alternative products
         $alternatives = ProductAlternative::where('product_id', $product->id)
             ->with(['alternativeProduct.variants.supplier'])
             ->get();
@@ -292,7 +268,6 @@ class CartOptimizationService
             }
         }
 
-        // Sort by score descending
         usort($sameBrand, fn ($a, $b) => $b['score'] <=> $a['score']);
         usort($similarItems, fn ($a, $b) => $b['score'] <=> $a['score']);
         usort($all, fn ($a, $b) => $b['score'] <=> $a['score']);
