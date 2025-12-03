@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -43,6 +44,26 @@ class ProductVariant extends Model
     public function cartItems(): HasMany
     {
         return $this->hasMany(CartItem::class);
+    }
+
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('is_active', true);
+    }
+
+    public function scopeForProduct(Builder $query, int $productId): Builder
+    {
+        return $query->where('product_id', $productId);
+    }
+
+    public function scopeExcluding(Builder $query, int $variantId): Builder
+    {
+        return $query->where('id', '!=', $variantId);
+    }
+
+    public function scopeWithRelations(Builder $query): Builder
+    {
+        return $query->with(['supplier', 'product']);
     }
 
     public function getTotalPriceAttribute(): float

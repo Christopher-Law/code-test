@@ -21,16 +21,13 @@ class CartController extends Controller
     {
         $user = $this->getCurrentUser();
 
-        $cartItems = CartItem::where('user_id', $user->id)
-            ->with([
-                'productVariant.product',
-                'productVariant.supplier',
-            ])
+        $cartItems = CartItem::forUser($user->id)
+            ->withProductDetails()
             ->get();
 
-        $selectedItems = CartItem::where('user_id', $user->id)
-            ->where('is_selected', true)
-            ->with(['productVariant.product', 'productVariant.supplier'])
+        $selectedItems = CartItem::forUser($user->id)
+            ->selected()
+            ->withProductDetails()
             ->get();
 
         $groupedItems = $this->summaryService->groupBySupplier($cartItems);
@@ -82,7 +79,7 @@ class CartController extends Controller
     {
         $user = $this->getCurrentUser();
 
-        CartItem::where('user_id', $user->id)
+        CartItem::forUser($user->id)
             ->whereIn('id', $request->validated()['item_ids'])
             ->update(['is_selected' => false]);
 
@@ -93,7 +90,7 @@ class CartController extends Controller
     {
         $user = $this->getCurrentUser();
 
-        CartItem::where('user_id', $user->id)
+        CartItem::forUser($user->id)
             ->whereIn('id', $request->validated()['item_ids'])
             ->delete();
 
@@ -104,7 +101,7 @@ class CartController extends Controller
     {
         $user = $this->getCurrentUser();
 
-        CartItem::where('user_id', $user->id)
+        CartItem::forUser($user->id)
             ->whereIn('id', $request->validated()['item_ids'])
             ->update(['is_selected' => false]);
 

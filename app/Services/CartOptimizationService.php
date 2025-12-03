@@ -27,9 +27,9 @@ class CartOptimizationService
      */
     public function optimizeCart(int $userId): array
     {
-        $cartItems = CartItem::where('user_id', $userId)
-            ->where('is_selected', true)
-            ->with(['productVariant.product', 'productVariant.supplier'])
+        $cartItems = CartItem::forUser($userId)
+            ->selected()
+            ->withProductDetails()
             ->get();
 
         $optimizations = [];
@@ -73,10 +73,10 @@ class CartOptimizationService
     {
         $alternatives = collect();
 
-        $sameProductVariants = ProductVariant::where('product_id', $product->id)
-            ->where('id', '!=', $currentVariant->id)
-            ->where('is_active', true)
-            ->with(['supplier', 'product'])
+        $sameProductVariants = ProductVariant::forProduct($product->id)
+            ->excluding($currentVariant->id)
+            ->active()
+            ->withRelations()
             ->get();
 
         foreach ($sameProductVariants as $variant) {
@@ -255,21 +255,21 @@ class CartOptimizationService
         $currentVariant = $cartItem->productVariant;
         $product = $currentVariant->product;
 
-        $sameBrand = [];
-        $similarItems = [];
-        $all = [];
+        $sameBrand = collect();
+        $similarItems = collect();
+        $all = collect();
 
-        $sameProductVariants = ProductVariant::where('product_id', $product->id)
-            ->where('id', '!=', $currentVariant->id)
-            ->where('is_active', true)
-            ->with(['supplier', 'product'])
+        $sameProductVariants = ProductVariant::forProduct($product->id)
+            ->excluding($currentVariant->id)
+            ->active()
+            ->withRelations()
             ->get();
 
         foreach ($sameProductVariants as $variant) {
             $suggestion = $this->buildSuggestion($currentVariant, $variant, $cartItem->quantity, 'same_product', null);
             if ($suggestion) {
-                $all[] = $suggestion;
-                $sameBrand[] = $suggestion;
+                $all->push($suggestion);
+                $sameBrand->push($suggestion);
             }
         }
 
@@ -292,25 +292,21 @@ class CartOptimizationService
                 );
 
                 if ($suggestion) {
-                    $all[] = $suggestion;
+                    $all->push($suggestion);
 
                     if ($alternative->relationship_type === 'same_brand') {
-                        $sameBrand[] = $suggestion;
+                        $sameBrand->push($suggestion);
                     } else {
-                        $similarItems[] = $suggestion;
+                        $similarItems->push($suggestion);
                     }
                 }
             }
         }
 
-        usort($sameBrand, fn ($a, $b) => $b['score'] <=> $a['score']);
-        usort($similarItems, fn ($a, $b) => $b['score'] <=> $a['score']);
-        usort($all, fn ($a, $b) => $b['score'] <=> $a['score']);
-
         return [
-            'same_brand' => $sameBrand,
-            'similar_items' => $similarItems,
-            'all' => $all,
+            'same_brand' => $sameBrand->sortByDesc('score')->values()->all(),
+            'similar_items' => $similarItems->sortByDesc('score')->values()->all(),
+            'all' => $all->sortByDesc('score')->values()->all(),
         ];
     }
 

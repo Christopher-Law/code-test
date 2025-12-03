@@ -17,13 +17,15 @@ class CartItemIdsRequest extends FormRequest
 
         $itemIds = $this->input('item_ids', []);
 
-        if (empty($itemIds)) {
+        if (collect($itemIds)->isEmpty()) {
             return false;
         }
 
-        return CartItem::where('user_id', $userId)
+        $itemIdsCollection = collect($itemIds);
+
+        return CartItem::forUser($userId)
             ->whereIn('id', $itemIds)
-            ->count() === count($itemIds);
+            ->count() === $itemIdsCollection->count();
     }
 
     public function rules(): array
