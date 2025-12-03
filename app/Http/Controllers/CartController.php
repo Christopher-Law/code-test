@@ -83,7 +83,7 @@ class CartController extends Controller
     /**
      * Update cart item quantity
      */
-    public function updateQuantity(Request $request, CartItem $cartItem): \Illuminate\Http\JsonResponse
+    public function updateQuantity(Request $request, CartItem $cartItem)
     {
         $request->validate([
             'quantity' => 'required|integer|min:1',
@@ -93,36 +93,70 @@ class CartController extends Controller
             'quantity' => $request->quantity,
         ]);
 
-        return response()->json([
-            'success' => true,
-            'cart_item' => $cartItem->load(['productVariant.product', 'productVariant.supplier']),
-        ]);
+        return redirect()->back();
     }
 
-    /**
-     * Toggle item selection
-     */
-    public function toggleSelection(Request $request, CartItem $cartItem): \Illuminate\Http\JsonResponse
+    public function toggleSelection(Request $request, CartItem $cartItem)
     {
         $cartItem->update([
             'is_selected' => ! $cartItem->is_selected,
         ]);
 
-        return response()->json([
-            'success' => true,
-            'is_selected' => $cartItem->is_selected,
-        ]);
+        return redirect()->back();
     }
 
-    /**
-     * Remove item from cart
-     */
-    public function remove(CartItem $cartItem): \Illuminate\Http\JsonResponse
+    public function remove(CartItem $cartItem)
     {
         $cartItem->delete();
 
-        return response()->json([
-            'success' => true,
+        return redirect()->back();
+    }
+
+    public function deselectAll(Request $request)
+    {
+        $request->validate([
+            'item_ids' => 'required|array',
+            'item_ids.*' => 'exists:cart_items,id',
         ]);
+
+        $user = Auth::user() ?? \App\Models\User::first();
+
+        CartItem::where('user_id', $user->id)
+            ->whereIn('id', $request->item_ids)
+            ->update(['is_selected' => false]);
+
+        return redirect()->back();
+    }
+
+    public function removeSelected(Request $request)
+    {
+        $request->validate([
+            'item_ids' => 'required|array',
+            'item_ids.*' => 'exists:cart_items,id',
+        ]);
+
+        $user = Auth::user() ?? \App\Models\User::first();
+
+        CartItem::where('user_id', $user->id)
+            ->whereIn('id', $request->item_ids)
+            ->delete();
+
+        return redirect()->back();
+    }
+
+    public function saveForLater(Request $request)
+    {
+        $request->validate([
+            'item_ids' => 'required|array',
+            'item_ids.*' => 'exists:cart_items,id',
+        ]);
+
+        $user = Auth::user() ?? \App\Models\User::first();
+
+        CartItem::where('user_id', $user->id)
+            ->whereIn('id', $request->item_ids)
+            ->update(['is_selected' => false]);
+
+        return redirect()->back();
     }
 }

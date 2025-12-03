@@ -42,7 +42,7 @@ class OptimizationController extends Controller
     /**
      * Apply optimization by replacing a cart item with a recommended variant
      */
-    public function applyOptimization(Request $request, CartItem $cartItem): \Illuminate\Http\JsonResponse
+    public function applyOptimization(Request $request, CartItem $cartItem)
     {
         $request->validate([
             'variant_id' => 'required|exists:product_variants,id',
@@ -52,10 +52,6 @@ class OptimizationController extends Controller
             'product_variant_id' => $request->variant_id,
         ]);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Cart item updated successfully',
-            'cart_item' => $cartItem->load(['productVariant.product', 'productVariant.supplier']),
-        ]);
+        return redirect()->back();
     }
 }

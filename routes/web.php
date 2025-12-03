@@ -14,6 +14,9 @@ Route::get('/cart', [CartController::class, 'index'])->name('cart.index');
 Route::patch('/cart/items/{cartItem}/quantity', [CartController::class, 'updateQuantity'])->name('cart.update-quantity');
 Route::patch('/cart/items/{cartItem}/toggle-selection', [CartController::class, 'toggleSelection'])->name('cart.toggle-selection');
 Route::delete('/cart/items/{cartItem}', [CartController::class, 'remove'])->name('cart.remove');
+Route::post('/cart/deselect-all', [CartController::class, 'deselectAll'])->name('cart.deselect-all');
+Route::post('/cart/remove-selected', [CartController::class, 'removeSelected'])->name('cart.remove-selected');
+Route::post('/cart/save-for-later', [CartController::class, 'saveForLater'])->name('cart.save-for-later');
 
 // Optimization routes
 Route::get('/api/optimize/cart', [OptimizationController::class, 'optimizeCart'])->name('optimize.cart');

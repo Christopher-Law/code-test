@@ -127,6 +127,70 @@ const onOptimizationApplied = () => {
     showOptimizationModal.value = false;
     router.reload();
 };
+
+const selectedItemsCount = computed(() => {
+    return props.cartItems.reduce((count, group) => {
+        return count + group.items.filter(item => item.is_selected).length;
+    }, 0);
+});
+
+const deselectAll = () => {
+    const selectedItemIds = props.cartItems
+        .flatMap(group => group.items)
+        .filter(item => item.is_selected)
+        .map(item => item.id);
+
+    if (selectedItemIds.length === 0) {
+        return;
+    }
+
+    router.post('/cart/deselect-all', {
+        item_ids: selectedItemIds,
+    }, {
+        preserveState: true,
+        preserveScroll: true,
+    });
+};
+
+const removeSelected = () => {
+    const selectedItemIds = props.cartItems
+        .flatMap(group => group.items)
+        .filter(item => item.is_selected)
+        .map(item => item.id);
+
+    if (selectedItemIds.length === 0) {
+        return;
+    }
+
+    if (!confirm(`Are you sure you want to remove ${selectedItemIds.length} item(s) from your cart?`)) {
+        return;
+    }
+
+    router.post('/cart/remove-selected', {
+        item_ids: selectedItemIds,
+    }, {
+        preserveState: true,
+        preserveScroll: true,
+    });
+};
+
+const saveForLater = () => {
+    const selectedItemIds = props.cartItems
+        .flatMap(group => group.items)
+        .filter(item => item.is_selected)
+        .map(item => item.id);
+
+    if (selectedItemIds.length === 0) {
+        return;
+    }
+
+    router.post('/cart/save-for-later', {
+        item_ids: selectedItemIds,
+    }, {
+        preserveState: true,
+        preserveScroll: true,
+    });
+};
 </script>
 
 <template>
@@ -169,9 +233,24 @@ const onOptimizationApplied = () => {
                             />
                         </div>
                         <div class="flex gap-4">
-                            <button class="text-blue-600 hover:text-blue-800 dark:text-blue-400">Deselect All</button>
-                            <button class="text-blue-600 hover:text-blue-800 dark:text-blue-400">Save For Later (17)</button>
-                            <button class="text-blue-600 hover:text-blue-800 dark:text-blue-400">Remove (17)</button>
+                            <button
+                                @click="deselectAll"
+                                class="text-blue-600 hover:text-blue-800 dark:text-blue-400"
+                            >
+                                Deselect All
+                            </button>
+                            <button
+                                @click="saveForLater"
+                                class="text-blue-600 hover:text-blue-800 dark:text-blue-400"
+                            >
+                                Save For Later ({{ selectedItemsCount }})
+                            </button>
+                            <button
+                                @click="removeSelected"
+                                class="text-blue-600 hover:text-blue-800 dark:text-blue-400"
+                            >
+                                Remove ({{ selectedItemsCount }})
+                            </button>
                         </div>
                     </div>
 
