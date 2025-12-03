@@ -43,15 +43,7 @@ interface Props {
 const props = defineProps<Props>();
 
 const showOptimizationModal = ref(false);
-const optimizationData = ref<{
-    optimizations: Array<{
-        cart_item_id: number;
-        total_savings: number;
-        price_savings: number;
-    }>;
-    total_savings: number;
-    total_savings_with_shipping: number;
-} | null>(null);
+const optimizationData = ref<any>(null);
 const loading = ref(false);
 
 const formatCurrency = (amount: number): string => {
@@ -116,11 +108,25 @@ const removeItem = (item: CartItem) => {
 
 const optimizeCart = async () => {
     loading.value = true;
-    const response = await fetch('/api/optimize/cart');
-    const data = await response.json();
-    optimizationData.value = data;
-    showOptimizationModal.value = true;
-    loading.value = false;
+    try {
+        const response = await fetch('/api/optimize/cart');
+        if (!response.ok) {
+            throw new Error('Failed to fetch optimizations');
+        }
+        const data = await response.json();
+        console.log('Optimization data received:', data);
+        optimizationData.value = data;
+        if (data.optimizations && data.optimizations.length > 0) {
+            showOptimizationModal.value = true;
+        } else {
+            alert('No optimization opportunities found at this time.');
+        }
+    } catch (error) {
+        console.error('Optimization error:', error);
+        alert('Failed to optimize cart. Please try again.');
+    } finally {
+        loading.value = false;
+    }
 };
 
 const onOptimizationApplied = () => {

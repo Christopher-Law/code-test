@@ -47,8 +47,9 @@ const emit = defineEmits<{
     applied: [];
 }>();
 
-const activeTab = ref<'same_brand' | 'similar_items' | 'show_all'>('same_brand');
+const activeTab = ref<'same_brand' | 'similar_items' | 'show_all'>('show_all');
 const selectedOptimizations = ref<Set<number>>(new Set());
+
 
 const formatCurrency = (amount: number): string => {
     return new Intl.NumberFormat('en-US', {
@@ -83,6 +84,10 @@ const filteredOptimizations = computed(() => {
     }
 
     const optimizations = props.optimizationData.optimizations;
+    
+    if (!optimizations || !Array.isArray(optimizations) || optimizations.length === 0) {
+        return [];
+    }
 
     switch (activeTab.value) {
         case 'same_brand':
@@ -151,7 +156,7 @@ const totalSelectedSavings = computed(() => {
 
             <!-- Modal panel -->
             <div
-                class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-6xl sm:w-full"
+                class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-6xl sm:w-full relative z-10"
                 @click.stop
             >
                 <!-- Header -->
@@ -211,11 +216,19 @@ const totalSelectedSavings = computed(() => {
                 </div>
 
                 <!-- Content -->
-                <div class="px-6 py-4 max-h-96 overflow-y-auto">
-                    <div v-if="filteredOptimizations.length === 0" class="text-center py-12">
-                        <p class="text-gray-500 dark:text-gray-400">No options here, yet.</p>
+                <div class="px-6 py-4 max-h-96 overflow-y-auto bg-white dark:bg-gray-800 min-h-[200px]">
+                    <div v-if="!optimizationData" class="text-center py-12">
+                        <p class="text-gray-500 dark:text-gray-400">Loading optimizations...</p>
                     </div>
-
+                    <div v-else-if="!optimizationData.optimizations || optimizationData.optimizations.length === 0" class="text-center py-12">
+                        <p class="text-gray-500 dark:text-gray-400">No optimization opportunities found.</p>
+                        <p class="text-xs text-gray-400 mt-2">Data: {{ JSON.stringify(optimizationData) }}</p>
+                    </div>
+                    <div v-else-if="filteredOptimizations.length === 0" class="text-center py-12">
+                        <p class="text-gray-500 dark:text-gray-400">No options in this category.</p>
+                        <p class="text-sm text-gray-400 mt-2">Try switching to another tab.</p>
+                        <p class="text-xs text-gray-400 mt-1">Total: {{ optimizationData.optimizations.length }}, Tab: {{ activeTab }}, Filtered: {{ filteredOptimizations.length }}</p>
+                    </div>
                     <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div
                             v-for="optimization in filteredOptimizations"
@@ -254,7 +267,7 @@ const totalSelectedSavings = computed(() => {
                             <!-- Price -->
                             <div class="mb-2">
                                 <span class="text-lg font-semibold text-gray-900 dark:text-white">
-                                    {{ formatCurrency(optimization.recommended_variant.price) }}
+                                    {{ formatCurrency(Number(optimization.recommended_variant.price)) }}
                                 </span>
                                 <span
                                     v-if="optimization.price_savings > 0"
@@ -266,9 +279,9 @@ const totalSelectedSavings = computed(() => {
 
                             <!-- Shipping -->
                             <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                                {{ optimization.recommended_variant.shipping_cost === 0 ? 'Free' : formatCurrency(optimization.recommended_variant.shipping_cost) }}
+                                {{ Number(optimization.recommended_variant.shipping_cost) === 0 ? 'Free' : formatCurrency(Number(optimization.recommended_variant.shipping_cost)) }}
                                 <span v-if="optimization.recommended_variant.estimated_delivery_date">
-                                    (Get it {{ optimization.recommended_variant.estimated_delivery_date }})
+                                    (Get it {{ new Date(optimization.recommended_variant.estimated_delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }})
                                 </span>
                             </p>
 
