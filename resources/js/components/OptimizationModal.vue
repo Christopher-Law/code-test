@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 
 interface Optimization {
@@ -50,6 +50,7 @@ const emit = defineEmits<{
 const activeTab = ref<'same_brand' | 'similar_items' | 'show_all'>('show_all');
 const selectedOptimizations = ref<Set<number>>(new Set());
 
+const filteredOptimizationsList = ref<Optimization[]>([]);
 
 const formatCurrency = (amount: number): string => {
     return new Intl.NumberFormat('en-US', {
@@ -78,37 +79,65 @@ const getStatusBadgeClass = (optimization: Optimization): string => {
     return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
 };
 
-const filteredOptimizations = computed(() => {
+watch([() => props.optimizationData, activeTab], () => {
     if (!props.optimizationData) {
-        return [];
+        filteredOptimizationsList.value = [];
+        return;
     }
 
     const optimizations = props.optimizationData.optimizations;
     
-    if (!optimizations || !Array.isArray(optimizations) || optimizations.length === 0) {
-        return [];
+    if (!optimizations || optimizations.length === 0) {
+        filteredOptimizationsList.value = [];
+        return;
     }
 
+    let filtered: typeof optimizations;
     switch (activeTab.value) {
         case 'same_brand':
-            return optimizations.filter(
+            filtered = optimizations.filter(
                 (opt) => opt.relationship_type === 'same_brand' || opt.type === 'same_product'
             );
+            break;
         case 'similar_items':
-            return optimizations.filter((opt) => opt.relationship_type === 'similar_item');
+            filtered = optimizations.filter((opt) => opt.relationship_type === 'similar_item');
+            break;
         case 'show_all':
-            return optimizations;
+            filtered = optimizations;
+            break;
         default:
-            return optimizations;
+            filtered = optimizations;
     }
-});
+
+    filteredOptimizationsList.value = filtered;
+}, { immediate: true });
+
+const filteredOptimizations = computed(() => filteredOptimizationsList.value);
 
 const toggleOptimization = (cartItemId: number) => {
-    if (selectedOptimizations.value.has(cartItemId)) {
-        selectedOptimizations.value.delete(cartItemId);
+    const newSet = new Set(selectedOptimizations.value);
+    if (newSet.has(cartItemId)) {
+        newSet.delete(cartItemId);
     } else {
-        selectedOptimizations.value.add(cartItemId);
+        newSet.add(cartItemId);
     }
+    selectedOptimizations.value = newSet;
+};
+
+const selectAll = () => {
+    const newSet = new Set(selectedOptimizations.value);
+    filteredOptimizations.value.forEach((opt) => {
+        newSet.add(opt.cart_item_id);
+    });
+    selectedOptimizations.value = newSet;
+};
+
+const deselectAll = () => {
+    const newSet = new Set(selectedOptimizations.value);
+    filteredOptimizations.value.forEach((opt) => {
+        newSet.delete(opt.cart_item_id);
+    });
+    selectedOptimizations.value = newSet;
 };
 
 const applyOptimizations = async () => {
@@ -178,7 +207,8 @@ const totalSelectedSavings = computed(() => {
 
                 <!-- Tabs -->
                 <div class="border-b border-gray-200 dark:border-gray-700">
-                    <nav class="flex -mb-px">
+                    <div class="flex items-center justify-between px-6 py-2">
+                        <nav class="flex -mb-px">
                         <button
                             @click="activeTab = 'same_brand'"
                             :class="[
@@ -213,6 +243,21 @@ const totalSelectedSavings = computed(() => {
                             Show All
                         </button>
                     </nav>
+                    <div class="flex gap-4">
+                        <button
+                            @click="selectAll"
+                            class="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                        >
+                            Select All
+                        </button>
+                        <button
+                            @click="deselectAll"
+                            class="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                        >
+                            Deselect All
+                        </button>
+                    </div>
+                </div>
                 </div>
 
                 <!-- Content -->
@@ -222,23 +267,22 @@ const totalSelectedSavings = computed(() => {
                     </div>
                     <div v-else-if="!optimizationData.optimizations || optimizationData.optimizations.length === 0" class="text-center py-12">
                         <p class="text-gray-500 dark:text-gray-400">No optimization opportunities found.</p>
-                        <p class="text-xs text-gray-400 mt-2">Data: {{ JSON.stringify(optimizationData) }}</p>
                     </div>
                     <div v-else-if="filteredOptimizations.length === 0" class="text-center py-12">
                         <p class="text-gray-500 dark:text-gray-400">No options in this category.</p>
                         <p class="text-sm text-gray-400 mt-2">Try switching to another tab.</p>
-                        <p class="text-xs text-gray-400 mt-1">Total: {{ optimizationData.optimizations.length }}, Tab: {{ activeTab }}, Filtered: {{ filteredOptimizations.length }}</p>
                     </div>
                     <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div
                             v-for="optimization in filteredOptimizations"
-                            :key="optimization.cart_item_id"
+                            :key="`opt-${optimization.cart_item_id}-${optimization.recommended_variant.id}`"
                             :class="[
-                                'border-2 rounded-lg p-4 cursor-pointer transition-all',
+                                'border-2 rounded-lg p-4 cursor-pointer transition-colors relative',
                                 selectedOptimizations.has(optimization.cart_item_id)
                                     ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
                                     : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600',
                             ]"
+                            style="min-height: 280px;"
                             @click="toggleOptimization(optimization.cart_item_id)"
                         >
                             <!-- Status Badge -->
@@ -267,7 +311,7 @@ const totalSelectedSavings = computed(() => {
                             <!-- Price -->
                             <div class="mb-2">
                                 <span class="text-lg font-semibold text-gray-900 dark:text-white">
-                                    {{ formatCurrency(Number(optimization.recommended_variant.price)) }}
+                                    {{ formatCurrency(optimization.recommended_variant.price) }}
                                 </span>
                                 <span
                                     v-if="optimization.price_savings > 0"
@@ -279,7 +323,7 @@ const totalSelectedSavings = computed(() => {
 
                             <!-- Shipping -->
                             <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                                {{ Number(optimization.recommended_variant.shipping_cost) === 0 ? 'Free' : formatCurrency(Number(optimization.recommended_variant.shipping_cost)) }}
+                                {{ optimization.recommended_variant.shipping_cost === 0 ? 'Free' : formatCurrency(optimization.recommended_variant.shipping_cost) }}
                                 <span v-if="optimization.recommended_variant.estimated_delivery_date">
                                     (Get it {{ new Date(optimization.recommended_variant.estimated_delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }})
                                 </span>

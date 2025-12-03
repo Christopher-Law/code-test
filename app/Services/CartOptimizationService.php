@@ -8,12 +8,17 @@ use App\Models\ProductVariant;
 
 class CartOptimizationService
 {
-    protected array $weights = [
-        'price' => 0.40,
-        'shipping' => 0.20,
-        'delivery_speed' => 0.25,
-        'availability' => 0.15,
-    ];
+    protected array $weights;
+
+    public function __construct()
+    {
+        $this->weights = config('cart.optimization.weights', [
+            'price' => 0.40,
+            'shipping' => 0.20,
+            'delivery_speed' => 0.25,
+            'availability' => 0.15,
+        ]);
+    }
 
     /**
      * Optimize a user's cart by finding better alternatives
@@ -48,13 +53,25 @@ class CartOptimizationService
         ];
     }
 
-    /**
-     * Optimize a single cart item
-     */
     protected function optimizeCartItem(CartItem $cartItem): ?array
     {
         $currentVariant = $cartItem->productVariant;
         $product = $currentVariant->product;
+
+        $alternatives = $this->collectAlternatives($currentVariant, $product, $cartItem->quantity);
+
+        $bestAlternative = $alternatives->sortByDesc('score')->first();
+
+        if ($bestAlternative === null || $bestAlternative['score'] <= 0) {
+            return null;
+        }
+
+        return $this->buildOptimizationResult($cartItem, $currentVariant, $product, $bestAlternative);
+    }
+
+    protected function collectAlternatives(ProductVariant $currentVariant, $product, int $quantity): \Illuminate\Support\Collection
+    {
+        $alternatives = collect();
 
         $sameProductVariants = ProductVariant::where('product_id', $product->id)
             ->where('id', '!=', $currentVariant->id)
@@ -62,16 +79,8 @@ class CartOptimizationService
             ->with(['supplier', 'product'])
             ->get();
 
-        $alternativeProducts = ProductAlternative::where('product_id', $product->id)
-            ->with(['alternativeProduct.variants.supplier'])
-            ->get()
-            ->pluck('alternativeProduct')
-            ->filter();
-
-        $alternatives = collect();
-
         foreach ($sameProductVariants as $variant) {
-            $score = $this->calculateOptimizationScore($currentVariant, $variant, $cartItem->quantity, 'same_product');
+            $score = $this->calculateOptimizationScore($currentVariant, $variant, $quantity, 'same_product');
             $alternatives->push([
                 'variant' => $variant,
                 'type' => 'same_product',
@@ -79,6 +88,12 @@ class CartOptimizationService
                 'relationship_type' => null,
             ]);
         }
+
+        $alternativeProducts = ProductAlternative::where('product_id', $product->id)
+            ->with(['alternativeProduct.variants.supplier'])
+            ->get()
+            ->pluck('alternativeProduct')
+            ->filter();
 
         foreach ($alternativeProducts as $alternativeProduct) {
             $relationship = ProductAlternative::where('product_id', $product->id)
@@ -93,7 +108,7 @@ class CartOptimizationService
                 $score = $this->calculateOptimizationScore(
                     $currentVariant,
                     $variant,
-                    $cartItem->quantity,
+                    $quantity,
                     $relationship->relationship_type ?? 'similar_item'
                 );
 
@@ -107,12 +122,11 @@ class CartOptimizationService
             }
         }
 
-        $bestAlternative = $alternatives->sortByDesc('score')->first();
+        return $alternatives;
+    }
 
-        if ($bestAlternative === null || $bestAlternative['score'] <= 0) {
-            return null;
-        }
-
+    protected function buildOptimizationResult(CartItem $cartItem, ProductVariant $currentVariant, $product, array $bestAlternative): array
+    {
         $bestVariant = $bestAlternative['variant'];
         $quantity = $cartItem->quantity;
 
@@ -164,42 +178,10 @@ class CartOptimizationService
     ): float {
         $score = 0.0;
 
-        $currentPrice = $currentVariant->price * $quantity;
-        $alternativePrice = $alternativeVariant->price * $quantity;
-        $priceDifference = $currentPrice - $alternativePrice;
-        $priceScore = $priceDifference > 0 ? ($priceDifference / $currentPrice) : 0;
-        $score += $priceScore * $this->weights['price'];
-
-        $currentShipping = $currentVariant->shipping_cost * $quantity;
-        $alternativeShipping = $alternativeVariant->shipping_cost * $quantity;
-        $shippingDifference = $currentShipping - $alternativeShipping;
-        $shippingScore = $shippingDifference > 0 ? ($shippingDifference / max($currentShipping, 1)) : 0;
-        $score += $shippingScore * $this->weights['shipping'];
-
-        $currentDeliveryDays = $currentVariant->estimated_delivery_days ?? 999;
-        $alternativeDeliveryDays = $alternativeVariant->estimated_delivery_days ?? 999;
-
-        if ($currentDeliveryDays > $alternativeDeliveryDays) {
-            $deliveryScore = min(1.0, ($currentDeliveryDays - $alternativeDeliveryDays) / max($currentDeliveryDays, 1));
-        } else {
-            $deliveryScore = 0;
-        }
-        $score += $deliveryScore * $this->weights['delivery_speed'];
-
-        $availabilityScores = [
-            'in_stock' => 1.0,
-            'backordered' => 0.5,
-            'out_of_stock' => 0.0,
-        ];
-        $currentAvailability = $availabilityScores[$currentVariant->availability_status] ?? 0;
-        $alternativeAvailability = $availabilityScores[$alternativeVariant->availability_status] ?? 0;
-
-        if ($alternativeAvailability > $currentAvailability) {
-            $availabilityScore = $alternativeAvailability - $currentAvailability;
-        } else {
-            $availabilityScore = 0;
-        }
-        $score += $availabilityScore * $this->weights['availability'];
+        $score += $this->calculatePriceScore($currentVariant, $alternativeVariant, $quantity);
+        $score += $this->calculateShippingScore($currentVariant, $alternativeVariant, $quantity);
+        $score += $this->calculateDeliveryScore($currentVariant, $alternativeVariant);
+        $score += $this->calculateAvailabilityScore($currentVariant, $alternativeVariant);
 
         if ($type === 'same_product' ||
             ($currentVariant->product->brand &&
@@ -213,6 +195,59 @@ class CartOptimizationService
         }
 
         return max(0, $score);
+    }
+
+    protected function calculatePriceScore(ProductVariant $currentVariant, ProductVariant $alternativeVariant, int $quantity): float
+    {
+        $currentPrice = $currentVariant->price * $quantity;
+        $alternativePrice = $alternativeVariant->price * $quantity;
+        $priceDifference = $currentPrice - $alternativePrice;
+        $priceScore = $priceDifference > 0 ? ($priceDifference / $currentPrice) : 0;
+
+        return $priceScore * $this->weights['price'];
+    }
+
+    protected function calculateShippingScore(ProductVariant $currentVariant, ProductVariant $alternativeVariant, int $quantity): float
+    {
+        $currentShipping = $currentVariant->shipping_cost * $quantity;
+        $alternativeShipping = $alternativeVariant->shipping_cost * $quantity;
+        $shippingDifference = $currentShipping - $alternativeShipping;
+        $shippingScore = $shippingDifference > 0 ? ($shippingDifference / max($currentShipping, 1)) : 0;
+
+        return $shippingScore * $this->weights['shipping'];
+    }
+
+    protected function calculateDeliveryScore(ProductVariant $currentVariant, ProductVariant $alternativeVariant): float
+    {
+        $currentDeliveryDays = $currentVariant->estimated_delivery_days ?? 999;
+        $alternativeDeliveryDays = $alternativeVariant->estimated_delivery_days ?? 999;
+
+        if ($currentDeliveryDays > $alternativeDeliveryDays) {
+            $deliveryScore = min(1.0, ($currentDeliveryDays - $alternativeDeliveryDays) / max($currentDeliveryDays, 1));
+        } else {
+            $deliveryScore = 0;
+        }
+
+        return $deliveryScore * $this->weights['delivery_speed'];
+    }
+
+    protected function calculateAvailabilityScore(ProductVariant $currentVariant, ProductVariant $alternativeVariant): float
+    {
+        $availabilityScores = [
+            'in_stock' => 1.0,
+            'backordered' => 0.5,
+            'out_of_stock' => 0.0,
+        ];
+        $currentAvailability = $availabilityScores[$currentVariant->availability_status] ?? 0;
+        $alternativeAvailability = $availabilityScores[$alternativeVariant->availability_status] ?? 0;
+
+        if ($alternativeAvailability > $currentAvailability) {
+            $availabilityScore = $alternativeAvailability - $currentAvailability;
+        } else {
+            $availabilityScore = 0;
+        }
+
+        return $availabilityScore * $this->weights['availability'];
     }
 
     public function getOptimizationSuggestions(CartItem $cartItem): array
@@ -279,9 +314,6 @@ class CartOptimizationService
         ];
     }
 
-    /**
-     * Build a suggestion array for a variant
-     */
     protected function buildSuggestion(
         ProductVariant $currentVariant,
         ProductVariant $alternativeVariant,

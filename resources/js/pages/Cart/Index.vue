@@ -85,6 +85,7 @@ const updateQuantity = (item: CartItem, newQuantity: number) => {
     }, {
         preserveState: true,
         preserveScroll: true,
+        only: ['cartItems', 'summary'],
     });
 };
 
@@ -92,6 +93,7 @@ const toggleSelection = (item: CartItem) => {
     router.patch(`/cart/items/${item.id}/toggle-selection`, {}, {
         preserveState: true,
         preserveScroll: true,
+        only: ['cartItems', 'summary'],
     });
 };
 
@@ -155,6 +157,7 @@ const deselectAll = () => {
     }, {
         preserveState: true,
         preserveScroll: true,
+        only: ['cartItems', 'summary'],
     });
 };
 
@@ -177,6 +180,7 @@ const removeSelected = () => {
     }, {
         preserveState: true,
         preserveScroll: true,
+        only: ['cartItems', 'summary'],
     });
 };
 
@@ -195,6 +199,7 @@ const saveForLater = () => {
     }, {
         preserveState: true,
         preserveScroll: true,
+        only: ['cartItems', 'summary'],
     });
 };
 </script>
@@ -287,7 +292,9 @@ const saveForLater = () => {
                                 <div
                                     v-for="item in group.items"
                                     :key="item.id"
+                                    data-cart-item
                                     class="p-6"
+                                    style="contain: layout style paint;"
                                 >
                                     <div class="flex gap-4">
                                         <!-- Checkbox -->

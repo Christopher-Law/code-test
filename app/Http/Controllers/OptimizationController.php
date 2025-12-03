@@ -2,10 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ApplyOptimizationRequest;
 use App\Models\CartItem;
 use App\Services\CartOptimizationService;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 
 class OptimizationController extends Controller
 {
@@ -13,45 +14,39 @@ class OptimizationController extends Controller
         protected CartOptimizationService $optimizationService
     ) {}
 
-    /**
-     * Get optimization suggestions for the entire cart
-     */
-    public function optimizeCart(): \Illuminate\Http\JsonResponse
+    public function optimizeCart(): JsonResponse
     {
-        $userId = Auth::id() ?? \App\Models\User::first()?->id;
-
-        if (! $userId) {
-            return response()->json(['error' => 'User not found'], 404);
-        }
+        $userId = $this->getCurrentUser()->id;
 
         $result = $this->optimizationService->optimizeCart($userId);
 
         return response()->json($result);
     }
 
-    /**
-     * Get optimization suggestions for a specific cart item
-     */
-    public function getSuggestions(CartItem $cartItem): \Illuminate\Http\JsonResponse
+    public function getSuggestions(CartItem $cartItem): JsonResponse
     {
+        $this->authorizeCartItem($cartItem);
+
         $suggestions = $this->optimizationService->getOptimizationSuggestions($cartItem);
 
         return response()->json($suggestions);
     }
 
-    /**
-     * Apply optimization by replacing a cart item with a recommended variant
-     */
-    public function applyOptimization(Request $request, CartItem $cartItem)
+    public function applyOptimization(ApplyOptimizationRequest $request, CartItem $cartItem): RedirectResponse
     {
-        $request->validate([
-            'variant_id' => 'required|exists:product_variants,id',
-        ]);
-
         $cartItem->update([
-            'product_variant_id' => $request->variant_id,
+            'product_variant_id' => $request->validated()['variant_id'],
         ]);
 
         return redirect()->back();
+    }
+
+    protected function authorizeCartItem(CartItem $cartItem): void
+    {
+        $user = $this->getCurrentUser();
+
+        if ($cartItem->user_id !== $user->id) {
+            abort(403, 'You do not have permission to view this cart item.');
+        }
     }
 }

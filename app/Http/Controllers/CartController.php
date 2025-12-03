@@ -2,102 +2,66 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\CartItemIdsRequest;
+use App\Http\Requests\UpdateCartItemQuantityRequest;
+use App\Http\Resources\CartItemResource;
 use App\Models\CartItem;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
+use App\Services\CartSummaryService;
+use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class CartController extends Controller
 {
-    /**
-     * Display the shopping cart page
-     */
+    public function __construct(
+        protected CartSummaryService $summaryService
+    ) {}
+
     public function index(): Response
     {
-        $user = Auth::user() ?? \App\Models\User::first();
-
-        if (! $user) {
-            abort(404, 'No user found. Please seed the database.');
-        }
+        $user = $this->getCurrentUser();
 
         $cartItems = CartItem::where('user_id', $user->id)
             ->with([
                 'productVariant.product',
                 'productVariant.supplier',
             ])
-            ->get()
-            ->groupBy(function ($item) {
-                return $item->productVariant->supplier->name;
-            });
+            ->get();
 
         $selectedItems = CartItem::where('user_id', $user->id)
             ->where('is_selected', true)
             ->with(['productVariant.product', 'productVariant.supplier'])
             ->get();
 
-        $subtotal = $selectedItems->sum(fn ($item) => $item->subtotal);
-        $shippingTotal = $selectedItems->sum(fn ($item) => $item->shipping_total);
-        $tax = $subtotal * 0.0835;
-        $orderTotal = $subtotal + $shippingTotal + $tax;
+        $groupedItems = $this->summaryService->groupBySupplier($cartItems);
+        $summary = $this->summaryService->calculateSummary($selectedItems);
 
         return Inertia::render('Cart/Index', [
-            'cartItems' => $cartItems->map(function ($items, $supplierName) {
+            'cartItems' => $groupedItems->map(function ($items, $supplierName) {
                 return [
                     'supplier' => $supplierName,
-                    'items' => $items->map(function ($item) {
-                        return [
-                            'id' => $item->id,
-                            'product_id' => $item->productVariant->product_id,
-                            'product_name' => $item->productVariant->product->name,
-                            'product_sku' => $item->productVariant->product->sku,
-                            'supplier_name' => $item->productVariant->supplier->name,
-                            'variant_id' => $item->product_variant_id,
-                            'price' => $item->productVariant->price,
-                            'shipping_cost' => $item->productVariant->shipping_cost,
-                            'quantity' => $item->quantity,
-                            'is_selected' => $item->is_selected,
-                            'availability_status' => $item->productVariant->availability_status,
-                            'estimated_delivery_date' => $item->productVariant->estimated_delivery_date?->format('M d, Y'),
-                            'estimated_delivery_days' => $item->productVariant->estimated_delivery_days,
-                            'image_url' => $item->productVariant->product->image_url,
-                            'subtotal' => $item->subtotal,
-                            'shipping_total' => $item->shipping_total,
-                            'total' => $item->total,
-                        ];
-                    })->values(),
+                    'items' => CartItemResource::collection($items)->resolve(),
                     'estimated_total' => $items->sum(fn ($item) => $item->total),
                     'estimated_shipping' => $items->sum(fn ($item) => $item->shipping_total),
                 ];
             })->values(),
-            'summary' => [
-                'subtotal' => $subtotal,
-                'shipping' => $shippingTotal,
-                'tax' => $tax,
-                'total' => $orderTotal,
-                'item_count' => $selectedItems->sum('quantity'),
-            ],
+            'summary' => $summary,
         ]);
     }
 
-    /**
-     * Update cart item quantity
-     */
-    public function updateQuantity(Request $request, CartItem $cartItem)
+    public function updateQuantity(UpdateCartItemQuantityRequest $request, CartItem $cartItem): RedirectResponse
     {
-        $request->validate([
-            'quantity' => 'required|integer|min:1',
-        ]);
-
         $cartItem->update([
-            'quantity' => $request->quantity,
+            'quantity' => $request->validated()['quantity'],
         ]);
 
         return redirect()->back();
     }
 
-    public function toggleSelection(Request $request, CartItem $cartItem)
+    public function toggleSelection(CartItem $cartItem): RedirectResponse
     {
+        $this->authorizeCartItem($cartItem);
+
         $cartItem->update([
             'is_selected' => ! $cartItem->is_selected,
         ]);
@@ -105,58 +69,54 @@ class CartController extends Controller
         return redirect()->back();
     }
 
-    public function remove(CartItem $cartItem)
+    public function remove(CartItem $cartItem): RedirectResponse
     {
+        $this->authorizeCartItem($cartItem);
+
         $cartItem->delete();
 
         return redirect()->back();
     }
 
-    public function deselectAll(Request $request)
+    public function deselectAll(CartItemIdsRequest $request): RedirectResponse
     {
-        $request->validate([
-            'item_ids' => 'required|array',
-            'item_ids.*' => 'exists:cart_items,id',
-        ]);
-
-        $user = Auth::user() ?? \App\Models\User::first();
+        $user = $this->getCurrentUser();
 
         CartItem::where('user_id', $user->id)
-            ->whereIn('id', $request->item_ids)
+            ->whereIn('id', $request->validated()['item_ids'])
             ->update(['is_selected' => false]);
 
         return redirect()->back();
     }
 
-    public function removeSelected(Request $request)
+    public function removeSelected(CartItemIdsRequest $request): RedirectResponse
     {
-        $request->validate([
-            'item_ids' => 'required|array',
-            'item_ids.*' => 'exists:cart_items,id',
-        ]);
-
-        $user = Auth::user() ?? \App\Models\User::first();
+        $user = $this->getCurrentUser();
 
         CartItem::where('user_id', $user->id)
-            ->whereIn('id', $request->item_ids)
+            ->whereIn('id', $request->validated()['item_ids'])
             ->delete();
 
         return redirect()->back();
     }
 
-    public function saveForLater(Request $request)
+    public function saveForLater(CartItemIdsRequest $request): RedirectResponse
     {
-        $request->validate([
-            'item_ids' => 'required|array',
-            'item_ids.*' => 'exists:cart_items,id',
-        ]);
-
-        $user = Auth::user() ?? \App\Models\User::first();
+        $user = $this->getCurrentUser();
 
         CartItem::where('user_id', $user->id)
-            ->whereIn('id', $request->item_ids)
+            ->whereIn('id', $request->validated()['item_ids'])
             ->update(['is_selected' => false]);
 
         return redirect()->back();
+    }
+
+    protected function authorizeCartItem(CartItem $cartItem): void
+    {
+        $user = $this->getCurrentUser();
+
+        if ($cartItem->user_id !== $user->id) {
+            abort(403, 'You do not have permission to modify this cart item.');
+        }
     }
 }
