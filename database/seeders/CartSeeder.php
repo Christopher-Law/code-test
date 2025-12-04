@@ -16,7 +16,7 @@ class CartSeeder extends Seeder
         if (! $user) {
             $user = User::create([
                 'name' => 'Demo User',
-                'email' => 'demo@zenone.com',
+                'email' => 'demo@example.com',
                 'password' => bcrypt('password'),
             ]);
         }
